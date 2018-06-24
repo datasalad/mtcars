@@ -1,0 +1,179 @@
+---
+output: 
+  html_document: 
+    theme: united
+  pdf_document: 
+    fig_width: 5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Executive summary
+
+This analysis explores the relationship between a set of variables in ```mtcars``` dataset and addresses the following questions:
+
+- Is an automatic or manual transmission better for MPG?
+- Quantify the MPG difference between automatic and manual transmissions.
+
+The analysis will shows that even though there is difference between the cars with manual and automatic transmission with respect to MPG, the manual transmission is no better than automatic transmission judging by information collected in the dataset.
+
+## The dataset
+
+The data ```mtcars``` is available in R ```datasets``` packages. The data was extracted from the 1974 Motor Trend US magazine, and comprises fuel consumption and 10 aspects of automobile design and performance for 32 automobiles (1973–74 models). Format: A data frame with 32 observations on 11 variables.
+
+| Feature            | Description                               |
+| ------------------ |:----------------------------------------: |
+| mpg                | Miles/(US) gallon                         |
+| cyl                | Number of cylinders                       |
+| disp               | Displacement (cu.in.)                     |
+| hp                 | Gross horsepower                          |
+| drat               | Rear axle ratio                           |
+| wt                 | Weight (1000 lbs)                         |
+| qsec               | 1/4 mile time                             |
+| vs                 | V/S                                       |
+| am                 | Transmission (0 = automatic, 1 = manual)  |
+| gear               | Number of forward gears                   |
+| carb               | Number of carburetors                     |
+
+## Data transformations and Exploratory analysis
+**The source code for data transformations is available in Appendix A.**
+```{r message=FALSE,  fig.height=5, fig.width=7, echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+
+## load the data into R
+data("mtcars")
+
+## create a data frame tbl
+dataset <- tbl_df(mtcars)
+
+## transform to factors
+dataset <- mutate(dataset, am = as.factor(am))
+dataset <- mutate(dataset, vs = as.factor(vs))
+dataset <- mutate(dataset, cyl = as.factor(cyl))
+dataset <- mutate(dataset, gear = as.factor(gear))
+dataset <- mutate(dataset, carb = as.factor(carb))
+
+## give meaningful labels
+levels(dataset$am) <- c("Auto", "Manual")
+
+## https://stackoverflow.com/questions/18617174/r-mtcars-dataset-meaning-of-vs-variable
+levels(dataset$vs) <- c("V/Vee", "Straight/inline")
+
+## overview of the data
+head(dataset)
+## let's take a look at the pairs plot
+```
+
+**Pairs plot of the dataset is available in Appendix B.**
+
+```{r fig.height=2.5, fig.width=7, message=FALSE, echo=FALSE}
+
+## boxplot
+g <- ggplot(dataset, aes(x = am, y = mpg))
+g <- g + geom_boxplot()
+g + labs(title = "Miles per gallon by the type of transmission", x = "Transmission", y = "MPG")
+```
+
+The boxplot shows that MPG is higher for the manual transmission. Let's check this with a t-test.
+
+```{r}
+t.test(mpg ~ am, data = dataset)
+
+```
+
+The t-test confirms our assumption (p-value of 0.001374 <= 0.05, therefore we reject H0) and shows that there's statistically significant difference between automatic and manual transmission. The pairs plot also shows that weight is the most strongly correlated with MPG (-0.8677). Let's take this into account during the model selection process. 
+
+## Modeling
+
+The naive approcah would be to fit a linear model with am as a predictor and mpg as an outcome. Let's try this first.
+
+```{r}
+fit_1 <- lm(mpg ~ am, data = dataset) 
+summary(fit_1)$coef
+summary(fit_1)$r.squared
+```
+
+The single variable model explains only 36% of the variance. The [Stepvise Algorithm](https://en.wikipedia.org/wiki/Stepwise_regression) will be used to find the best fitting model automatically. 
+
+```{r}
+stepvise_model <- step(lm(mpg ~ . , data = dataset ), trace = 0)
+
+summary(stepvise_model)$coef
+summary(stepvise_model)$r.squared
+
+```
+
+The algorithm suggests that this model explains 87% of the variance.  **am, cyl, wt, hp ** variables are used as predictors for mpg. Let's do a quick check and compare our first model and the one we just discovered.
+
+```{r}
+anova(fit_1, stepvise_model)
+```
+
+F statistic is large, p-value is small, so we can confirm that there's a significant difference between the models and the one that the stepwise algorithm suggested is in fact better.
+
+## Residuals / diagnostics plots
+**Residuals plots are available in Appendix C.** From the plots of residuals, we can see that there is no pattern in residuals and they are homoscedastic.
+```{r}
+head(sort(dfbetas(stepvise_model)[,'amManual'], decreasing = TRUE), n = 2)
+head(sort(hatvalues(stepvise_model), decreasing = TRUE), n = 2)
+```
+
+All the outliers do not have significant influence on the model.
+
+
+## Conclusions
+From the model output, the manual transmission results in +1.8 mpg compared to the automatic transmission. Every 1000 lbs of the weight of the car result in decrease of mpg by -2.5
+
+It's not clear, however, whether it's an effect of the type of transmission itself, or cars in the dataset just tend to be lighter and have less cylinders. More thorough analysis is required.
+
+## Appendix A
+
+```{r message=FALSE,  fig.height=7, fig.width=9, echo=T}
+library(dplyr)
+library(ggplot2)
+library(GGally)
+
+## load the data into R
+data("mtcars")
+
+## create a data frame tbl
+dataset <- tbl_df(mtcars)
+
+## transform to factors
+dataset <- mutate(dataset, am = as.factor(am))
+dataset <- mutate(dataset, vs = as.factor(vs))
+dataset <- mutate(dataset, cyl = as.factor(cyl))
+dataset <- mutate(dataset, gear = as.factor(gear))
+dataset <- mutate(dataset, carb = as.factor(carb))
+
+## give meaningful labels
+levels(dataset$am) <- c("Auto", "Manual")
+
+## https://stackoverflow.com/questions/18617174/r-mtcars-dataset-meaning-of-vs-variable
+levels(dataset$vs) <- c("V/Vee", "Straight/inline")
+
+## take a look at the data
+head(dataset)
+
+## let's take a look at the pairs plot
+## ggpairs(dataset)
+```
+
+## Appendix B 
+
+```{r message=FALSE,  fig.height=7.5, fig.width=12, echo=FALSE, cache=TRUE}
+ggpairs(dataset)
+```
+
+## Appendix C
+
+```{r fig.height=4, fig.width=5.5, echo=F}
+
+par(mfrow=c(2, 2))
+plot(stepvise_model)
+```
+
+
